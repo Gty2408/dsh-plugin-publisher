@@ -1,8 +1,8 @@
 {
   "name": "dsh-plugin-publisher",
   "displayName": "DSH Plugin Publisher",
-  "description": "Publish a DSH plugin to GitHub and submit it to the plugin marketplace, from a settings page inside DSH. Validates the manifest, initialises the repository, creates the GitHub repo, pushes, and opens the listing pull request.",
-  "version": "1.0.0",
+  "description": "Publish a DSH plugin to GitHub as a tool the agent calls, so another machine can install it with dsh plugin add github:<owner>/<repo>. Validates the manifest, initialises the repository, creates the GitHub repo, uploads the tree, and sets the dsh-plugin topic.",
+  "version": "2.0.0",
   "license": "MIT",
   "type": "module",
   "main": "lib/index.js",
@@ -18,7 +18,6 @@
     ".": {
       "default": "./lib/index.js"
     },
-    "./client": "./lib/client.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },
@@ -40,9 +39,6 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
-    },
-    "client": {
-      "platform": "web"
     }
   }
 }
