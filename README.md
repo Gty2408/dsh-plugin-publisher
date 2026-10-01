@@ -81,6 +81,7 @@ publish_plugin  directory="C:\...\my-plugin"
 | `repo` | `package.json` 的 `name` |
 | `description` | `package.json` 的 `description` |
 | `private` | `false`（公开） |
+| **`replace_existing`** | **`false`（不覆盖已有代码）** |
 | `submit` | `false`（**不投稿市场**） |
 
 **发布流程**：
@@ -89,11 +90,55 @@ publish_plugin  directory="C:\...\my-plugin"
 1. 检查    ← 本地预检，不改任何东西
 2. 验证    ← 用 token 查出你的账号（同时验证 token 有效）
 3. 建仓    ← git init + commit + 创建 GitHub 仓库
-4. 上传    ← 整个工作树作为一个 commit
-5. 主题    ← 自动设置 dsh-plugin topic
+4. 保护    ← 仓库已有代码？默认拒绝覆盖
+5. 上传    ← 整个工作树作为一个 commit
+6. 主题    ← 自动设置 dsh-plugin topic
 ```
 
 **每一步都有反馈，失败会明确说卡在哪、已经完成了什么。**
+
+---
+
+## 默认不覆盖你的代码
+
+这是这个工具**唯一有破坏性的操作**，所以默认关掉。
+
+| 仓库状态 | 行为 |
+|---|---|
+| 全新仓库 | ✅ 直接发布 |
+| 只有 GitHub 自动生成的初始提交 | ✅ 直接发布（那个提交是空的 README） |
+| **已有你的提交** | ❌ **拒绝，什么都不改** |
+
+被拒绝时会明确告诉你：
+
+> `the branch "main" already has commits; refusing to replace them.`
+> `Nothing was changed. Pass replace_existing to overwrite, or choose a different repository name to keep both.`
+
+**为什么这么设计**：上传会**替换**仓库内容。如果那个仓库里有你在另一台电脑上推的东西，**默认覆盖就等于删掉它**。
+
+**检查在任何文件上传之前**，所以拒绝**零代价**——不会留下半个仓库。
+
+要覆盖就显式传 `replace_existing: true`，这时会**明确警告**正在替换。
+
+---
+
+## 安装命令给两条
+
+发布成功后会打印**两条**安装命令：
+
+```
+dsh plugin --profile desktop add github:你/插件名
+    (resolved through git; that machine needs git installed)
+
+dsh plugin --profile desktop add https://codeload.github.com/你/插件名/tar.gz/HEAD
+    (fetched over HTTPS; needs no git)
+```
+
+**为什么给两条**：`github:` 那条**需要目标机器装了 git**。第二条走 HTTPS，**不需要 git**。
+
+**这台机器实测**：`github.com` 20 次只通 6 次。另一台电脑如果更差，第一条会失败——**有备选就不会卡住**。
+
+还会额外给一条**固定到具体版本**的（用 commit SHA），装"确定是这一版"而不是"跟着 HEAD 走"。
 
 ---
 
@@ -226,15 +271,20 @@ Standard Schema 通常来自 schema 库（`schemastery` / `zod`），而**它们
 node tools/publisher-preflight.test.mjs   # 收录要求 + 三方标识 + 凭据扫描（49 项）
 node tools/publisher-publish.test.mjs     # 发布流程：顺序、失败、分支、主题（77 项）
 node tools/publisher-tool.test.mjs        # 工具契约：schema、参数校验、结果（52 项）
+node tools/publisher-overwrite.test.mjs   # 覆盖保护：拒绝、放行、警告（22 项）
 node tools/publisher-eval.test.mjs        # 宿主半求值 + 确认无浏览器代码（32 项）
+node tools/hermetic-selftest.mjs          # 确认没有任何测试能碰真实账号（24 项）
 ```
 
-**210 项。** 关键断言：
+**256 项。** 关键断言：
 
+- **覆盖保护真的会拦**，且**零代价**（拒绝时一个文件都没上传）
+- **只有"自动生成的初始提交"不算已有代码**（否则新仓库永远发不出去）
 - **没有导出 `Config`**（导出就会让 Cordis 加载失败）
 - **三方标识不一致会被拦**（浏览器半静默失效的那种）
 - **凭据文件会被拦**
 - **工具 schema 满足 registry 契约**（`output.render` 必须是函数）
+- **没有任何测试能碰真实账号**（这条是**扫描其他测试文件**得出的，不是自称）
 - **参数自己校验**：未知参数、类型错误、空值都被拒绝
 - **没有 token 时报错清楚**，并列出所有提供方式
 - **网络失败才回退 API**，认证失败不回退
