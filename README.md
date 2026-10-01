@@ -11,11 +11,15 @@
 ```
 1. 检查    ← 本地预检，不改任何东西
 2. 授权    ← 验证 GitHub token
-3. 建仓    ← git init + commit + 创建 GitHub 仓库 + push
-4. 上架    ← fork 插件市场 → 加一个 YAML → 提 PR
+3. 建仓    ← git init + commit + 创建 GitHub 仓库 + 上传
+4. 主题    ← 自动设置 dsh-plugin topic（收录硬性要求）
+5. 上架    ← fork 插件市场 → 加一个 YAML → 提 PR
 ```
 
-四步都有进度反馈，**失败会明确告诉你卡在哪一步、已经完成了什么**。
+每一步都有进度反馈，**失败会明确告诉你卡在哪一步、已经完成了什么**。
+
+**上传有两条路**：先试 `git push`，遇到网络问题自动回退到 GitHub REST API。
+投稿 PR **永远走 API**。原因见下面的「两个已修复的严重 bug」。
 
 ---
 
@@ -32,13 +36,16 @@
 |---|---|
 | `dsh.bundle.patch` 已声明（**否则无法安装**） | ❌ 错误 |
 | patch 文件真实存在 | ❌ 错误 |
+| **patch 里的 insert id == 包名** | ❌ 错误 |
+| **浏览器半注册的 id == 包名** | ❌ 错误 |
+| **没有疑似凭据的文件**（`.env` / `*.pem` / `id_rsa` …） | ❌ 错误 |
 | 包名全小写（npm 拒绝大写） | ❌ 错误 |
 | 版本号是合法 semver | ❌ 错误 |
-| `keywords` 含 `dsh-plugin` | ❌ 错误 |
 | 入口文件存在（占位仓库不收） | ❌ 错误 |
 | owner / repo 名合法 | ❌ 错误 |
 | 分类是官方 23 个取值之一 | ❌ 错误 |
 | 英文描述以句号结尾 | ❌ 错误 |
+| `keywords` 含 `dsh-plugin`（只是 npm 搜索提示） | ⚠️ 警告 |
 | 描述里没有营销词 | ⚠️ 警告 |
 | 描述里声称了具体数量（会被核对） | ⚠️ 警告 |
 | 有 LICENSE 文件 | ⚠️ 警告 |
@@ -47,6 +54,32 @@
 
 **错误会阻止发布，警告不会。** 这样你在本地就知道问题，而不是在维护者的 PR
 评论里。
+
+### 最值钱的一条：三方标识一致性
+
+一个 DSH 插件的身份写在**三个地方**：
+
+```
+package.json 的 name
+cordis.patch.yml 里 insert 的 id
+lib/client.js 里 __ModuleLoader__.load({ id })
+```
+
+**三者必须完全一致。** 如果浏览器半注册的 id 和包名对不上：
+
+> **浏览器半永远不会加载，而且没有任何地方报错。**
+> 插件看起来装好了，就是什么都不做。
+
+这是插件最糟糕的失败模式——**静默无效**。所以这是**错误级**检查，不是警告。
+
+### 凭据文件会被拦住
+
+发布前扫描 `.env`、`*.pem`、`*.key`、`id_rsa`、`.npmrc`、`.netrc`、含
+`credential`/`secret` 的文件名，命中就是**错误**：
+
+> **推到公开仓库的密钥，在推送那一刻就已经泄露了**——即使事后删除提交也来不及。
+
+误报的代价（改个文件名）远低于漏报的代价（token 泄露）。
 
 ### 它按正确的顺序做事
 
@@ -182,8 +215,9 @@ github.com:443        ❌  22 秒超时（TCP 连接失败）
   （本 profile 的 HMR 默认不监听任何模块根目录）。
 - **仓库创建满 1 天**才能被收录——这是市场的规定，插件无法绕过。
   刚建的仓库提 PR 会被 CI 拒。
-- **需要手动加 `dsh-plugin` topic**：仓库页面 → ⚙️ About → Topics。
-  预检只能检查 `keywords` 里有没有这个词，无法替你操作 GitHub 页面。
+- **topic 自动设置**，不需要手动操作。实测 `PUT /repos/:o/:r/topics`
+  在 `repo` 权限下可用；如果失败，只是**警告**而不是发布失败
+  （代码已经上传，你可以手动补）。
 - **不能发 npm**：本插件只做 GitHub 发布 + 市场收录。
   发布到 npm 是另一条独立的路（市场收录不依赖它）。
 - **API 传输有单文件上限**：40 MB（GitHub blob API 的限制）。
@@ -195,10 +229,11 @@ github.com:443        ❌  22 秒超时（TCP 连接失败）
 
 | 文件 | 职责 |
 |---|---|
-| `lib/preflight.js` | 收录要求校验 + 生成投稿 YAML |
-| `lib/github.js` | GitHub REST 调用（4 个端点） |
+| `lib/preflight.js` | 收录要求 + 三方标识 + 凭据扫描 + 生成投稿 YAML |
+| `lib/github.js` | GitHub REST 调用（仓库、主题、fork、PR） |
+| `lib/transfer.js` | API 传输：blob → tree → commit → ref；投稿 PR |
 | `lib/git.js` | 通过 `ctx.subprocess` 跑 git |
-| `lib/publish.js` | 编排整个流程 |
+| `lib/publish.js` | 编排整个流程（含双传输回退） |
 | `lib/index.js` | 宿主半：4 条 loopback 路由 |
 | `lib/client.js` | 浏览器半：设置页 |
 
@@ -223,17 +258,22 @@ github.com:443        ❌  22 秒超时（TCP 连接失败）
 ## 测试
 
 ```sh
-node tools/publisher-preflight.test.mjs   # 收录要求逐条校验（35 项）
-node tools/publisher-publish.test.mjs     # 发布流程：顺序、失败、脱敏（45 项）
+node tools/publisher-preflight.test.mjs   # 收录要求 + 三方标识 + 凭据扫描（49 项）
+node tools/publisher-publish.test.mjs     # 发布流程：顺序、失败、分支、主题、脱敏（77 项）
 node tools/publisher-eval.test.mjs        # 两端模块求值 + 路由守门（38 项）
 ```
 
-**118 项。** 覆盖的关键行为：
+**164 项。** 覆盖的关键行为：
 
 - 预检对**真实可发布插件**通过、对**故意做坏的包**报出每一条错误
-- 发布流程的**顺序**（预检 → token → 本地提交 → 建仓 → push → 提 PR）
+- **三方标识不一致会被拦**（浏览器半静默失效的那种）
+- **凭据文件会被拦**（`.env` / 私钥 / `.npmrc` …）
+- 发布流程的**顺序**（预检 → token → 本地提交 → 建仓 → 上传 → 主题 → 提 PR）
 - **失败语义**：坏 token 不建仓库；预检失败不碰 GitHub；
-  push 失败仍报告已建仓库；仅提 PR 失败时发布仍算成功
+  上传失败仍报告已建仓库；仅提 PR 失败时发布仍算成功
+- **网络失败才回退 API**，认证失败不回退（否则掩盖真正的错误）
+- **两个不同插件用两个不同分支**（防止投稿互相覆盖）
+- **提交树必须带 `base_tree`**（漏掉会静默删掉整个插件列表）
+- **主题设置合并而非覆盖**（不会丢掉用户自己的 topic）
 - **token 不泄漏**：不出现在结果里、不出现在步骤详情里、错误信息被脱敏
-- **脏 fork 拒绝提交**
 - 每条路由都拒绝非本机来源和非 POST 方法
