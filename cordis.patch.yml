@@ -1,0 +1,7 @@
+# Register the plugin publisher. It adds a loopback-only route set on the Host
+# (validate a plugin directory, publish it to GitHub, submit it to the
+# marketplace) and one settings page in the Web client. It changes no shipped
+# entry and no model default.
+- insert:
+    - id: dsh-plugin-publisher
+      name: dsh-plugin-publisher

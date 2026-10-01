@@ -1,0 +1,10 @@
+# Nothing in this package is generated at install time; there is no build step
+# and no runtime dependency. These entries cover editor and OS noise.
+
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+node_modules/
+npm-debug.log*

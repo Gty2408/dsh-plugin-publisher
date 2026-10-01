@@ -1,0 +1,48 @@
+{
+  "name": "dsh-plugin-publisher",
+  "displayName": "DSH Plugin Publisher",
+  "description": "Publish a DSH plugin to GitHub and submit it to the plugin marketplace, from a settings page inside DSH. Validates the manifest, initialises the repository, creates the GitHub repo, pushes, and opens the listing pull request.",
+  "version": "1.0.0",
+  "license": "MIT",
+  "type": "module",
+  "main": "lib/index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Gty2408/dsh-plugin-publisher.git"
+  },
+  "homepage": "https://github.com/Gty2408/dsh-plugin-publisher#readme",
+  "bugs": {
+    "url": "https://github.com/Gty2408/dsh-plugin-publisher/issues"
+  },
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "dsh",
+    "publish",
+    "github",
+    "release",
+    "devtools"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  }
+}
