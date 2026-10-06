@@ -1,19 +1,105 @@
 # dsh-plugin-publisher
 
-把插件一键上传到 GitHub —— **给 DSH 用的工具，没有界面。**
+把插件一键上传到 GitHub，**并且让多台电脑上的 DSH 协作开发同一个仓库** ——
+**给 DSH 用的工具，没有界面。**
 
-DSH 里注册两个工具，我（agent）直接调用：
+DSH 里注册七个工具，我（agent）直接调用：
 
 | 工具 | 作用 |
 |---|---|
 | `check_plugin` | 检查插件目录是否符合要求（只读，不联网） |
 | `publish_plugin` | 创建 GitHub 仓库 + 上传代码 + 设置 topic |
+| `share_project` | 把本机目录变成"协作项目"（写 `main`，建本机分支） |
+| `join_project` | 在另一台电脑加入已有项目（建本机分支 + 装 SSH key） |
+| `sync_project` | **日常用的那条**：拉 `main` → 合并 → 推本机分支 |
+| `merge_project` | 把别的机器分支合并进来（本地三方合并） |
+| `project_status` | 报告本机在这个项目里的状态（只读） |
 
 **用途**：把插件推到 GitHub，然后**在另一台电脑上直接安装**：
 
 ```sh
 dsh plugin --profile desktop add github:<owner>/<repo>
 ```
+
+---
+
+## 多机协作：怎么用
+
+### 一句话模型
+
+```
+main              大家商量好的结果，只有 share_project 写它
+machine/<机器名>   每台电脑自己的分支，只有它自己能写
+```
+
+**一台电脑一个分支，谁也不写别人的分支。** 合并发生在**本地 git** 里，
+因为 GitHub 的合并 API 遇到冲突会**整体失败**、而且**不给冲突标记**——
+那样 agent 就没法自己修冲突了。
+
+### 两个人（或两台电脑）各自要做什么
+
+| 场景 | 需要手动做的事 |
+|---|---|
+| **同一个 GitHub 账号的第二台电脑** | 装插件 + 配 token，然后 `join_project` |
+| **另一个人** | 装插件 + 配 token + 让仓库管理员把你加成 collaborator（`share_project` 的 `collaborator` 参数可以直接邀请） |
+
+**SSH key 不用你管。** 插件会为每台机器自动生成一把钥匙并自动装到仓库上。
+（需要手动做一次的事只有一件：如果你愿意，可以自己 `git clone` 一次仓库——
+不 clone 也行，`join_project` 会直接在本机目录里 `git init`。）
+
+### 完整流程
+
+```
+第一台电脑：
+  share_project   directory="C:\...\my-plugin"        ← 建仓库、推 main、建本机分支
+
+第二台电脑：
+  join_project    directory="C:\...\my-plugin"        ← 自动装 SSH key、建本机分支、合并 main
+
+之后每台电脑：
+  改代码 …
+  sync_project    directory="C:\...\my-plugin"        ← 拉 main、合并、推自己的分支
+
+要合别人的活：
+  merge_project   directory="C:\...\my-plugin"        ← 默认合进本机分支，检查无误再 into="main"
+
+随时看状态：
+  project_status  directory="C:\...\my-plugin"
+```
+
+### 冲突怎么办
+
+`sync_project` / `merge_project` / `join_project` 遇到冲突会**停下来并列出文件名**，
+不会推任何东西。然后我（agent）去读文件里的标记：
+
+```
+<<<<<<< HEAD
+=======
+>>>>>>> machine/other
+```
+
+改完、把标记删掉，**再跑一次同一条命令**就继续了。**不需要人来解冲突。**
+
+### 为什么每台机器一把钥匙
+
+| 原因 | 说明 |
+|---|---|
+| 一把钥匙只能绑一个仓库 | 实测同一个公钥装到第二个仓库会 **422**，所以钥匙文件按仓库名命名 |
+| 账号级 key 管理做不了 | 实测 `GET /user/keys` 返回 **404**（`repo` 权限不够），但**仓库级 deploy key 可以** |
+| 没有 ssh-agent | 实测 `ssh-add -l` 报 "No such file or directory"，所以钥匙**不带口令**（否则会卡住等输入） |
+| 路径必须用正斜杠 | git 会把 `core.sshCommand` 里的反斜杠吃掉，报错却长得像认证问题 |
+
+**权限决定传输方式，不是偏好**：仓库管理员 → 装 deploy key 走 SSH；
+只是 collaborator → 走 HTTPS + token（**只有管理员能管仓库的 deploy key**）。
+
+### 安全默认值
+
+- **`replace_existing` 默认 `false`**：`share_project` 遇到 `main` 已有提交会**拒绝**，
+  因为覆盖上传会**删掉别的机器的工作**。
+- **推自己的分支从不加 `--force`**：并发推送会**响亮地失败**，不会被悄悄覆盖。
+- **只有 `share_project` 用 `--force`**，而且受上面的覆盖保护拦截。
+- **推 `main` 之前先查 `/compare/{base}...{head}`**，落后就要求先 `sync_project`。
+  （这个查询**只用来提前警告**，合并本身永远是本地三方合并。）
 
 ---
 
@@ -190,11 +276,11 @@ github.com:443        不稳定，20 次里只成功 6 次，耗时 1.2–8 秒
 ```
 package.json 的 name
 cordis.patch.yml 里 insert 的 id
-lib/client.js 里 __ModuleLoader__.load({ id })
+lib/client.js 里 __ModuleLoader__.load({ id })   ← 有浏览器半的插件才有
 ```
 
 **必须完全一致。** 对不上的后果是**静默无效**——插件看起来装好了，就是什么都不做，
-**没有任何地方报错**。所以是错误级。
+**没有任何地方报错**。所以是错误级。（本插件没有浏览器半，第三条不适用。）
 
 **② 凭据文件扫描**
 
@@ -210,6 +296,11 @@ lib/client.js 里 __ModuleLoader__.load({ id })
 - **API 传输单文件上限 40 MB**：超大会明确报错并建议用 release asset。
 - **`repo` 权限不能删仓库**：实测 `DELETE /repos/...` 返回 403
   （`Must have admin rights`）。删仓库需要单独的 `delete_repo` 权限。
+- **`repo` 权限管不了账号级 SSH key**：实测 `GET /user/keys` 返回 404。
+  仓库级 deploy key 可以（这也是协作走 deploy key 的原因）。
+- **API 传输会丢文件模式**：符号链接和 `100755` 权限位在 API 路径上不保留。
+- **二进制文件没法文本合并**：冲突时只能二选一，不会自动合。
+- **公开仓库里的草稿是公开可见的**：推到公开仓库那一刻就可见了。
 - **投稿市场是可选的**（`submit: true`），默认关闭。市场还要求仓库创建满 1 天。
 
 ---
@@ -218,13 +309,16 @@ lib/client.js 里 __ModuleLoader__.load({ id })
 
 | 文件 | 职责 |
 |---|---|
-| `lib/tool.js` | 两个工具的**定义**：JSON Schema、参数校验、结果渲染 |
+| `lib/tool.js` | 发布两个工具的**定义**：JSON Schema、参数校验、结果渲染 |
 | `lib/preflight.js` | 检查：收录要求 + 三方标识 + 凭据扫描 |
-| `lib/github.js` | GitHub REST：仓库、主题 |
+| `lib/github.js` | GitHub REST：仓库、主题、deploy key、分支比较 |
 | `lib/transfer.js` | API 传输：blob → tree → commit → ref |
 | `lib/git.js` | 通过 `ctx.subprocess` 跑 git |
-| `lib/publish.js` | 编排流程（含双传输回退） |
-| `lib/index.js` | 注册两个工具（**只有这一件事**） |
+| `lib/publish.js` | 编排发布流程（含双传输回退） |
+| `lib/collab.js` | 协作的零件：机器名、分支名、SSH key、URL 解析 |
+| `lib/collab-sync.js` | 协作的五个流程：join / share / sync / merge / status |
+| `lib/collab-tools.js` | 五个协作工具的**定义** |
+| `lib/index.js` | 注册七个工具（**只有这一件事**） |
 
 ### 技术约束（实测得出）
 
@@ -270,13 +364,14 @@ Standard Schema 通常来自 schema 库（`schemastery` / `zod`），而**它们
 ```sh
 node tools/publisher-preflight.test.mjs   # 收录要求 + 三方标识 + 凭据扫描（49 项）
 node tools/publisher-publish.test.mjs     # 发布流程：顺序、失败、分支、主题（77 项）
-node tools/publisher-tool.test.mjs        # 工具契约：schema、参数校验、结果（52 项）
+node tools/publisher-tool.test.mjs        # 工具契约：schema、参数校验、结果（53 项）
 node tools/publisher-overwrite.test.mjs   # 覆盖保护：拒绝、放行、警告（22 项）
-node tools/publisher-eval.test.mjs        # 宿主半求值 + 确认无浏览器代码（32 项）
-node tools/hermetic-selftest.mjs          # 确认没有任何测试能碰真实账号（24 项）
+node tools/publisher-eval.test.mjs        # 宿主半求值 + 确认无浏览器代码（59 项）
+node tools/publisher-collab.test.mjs      # 协作：分支、钥匙、合并、冲突（104 项）
+node tools/hermetic-selftest.mjs          # 确认没有任何测试能碰真实账号（28 项）
 ```
 
-**256 项。** 关键断言：
+**392 项。** 关键断言：
 
 - **覆盖保护真的会拦**，且**零代价**（拒绝时一个文件都没上传）
 - **只有"自动生成的初始提交"不算已有代码**（否则新仓库永远发不出去）
@@ -291,3 +386,9 @@ node tools/hermetic-selftest.mjs          # 确认没有任何测试能碰真实
 - **主题设置合并而非覆盖**（不会丢掉用户自己的 topic）
 - **插件里没有浏览器代码**（`window.__ModuleLoader__` 一处都没有）
 - **`inject` 只声明 `tools`**——访问其他服务一律走 `ctx.get()`
+- **一台机器只写自己的分支**（分支名带 `machine/` 前缀，且按名字排序）
+- **钥匙文件按仓库命名**（一把钥匙只能绑一个仓库，同名会互相覆盖）
+- **Windows 路径转成正斜杠**（反斜杠会被 git 吃掉，报错像认证问题）
+- **钥匙不带口令**（没有 ssh-agent，带口令会卡住等输入）
+- **冲突时停下来列文件名、且一个字节都不推**
+- **`owner` 只给一半时宁可丢掉**（半对会让流程忽略本来就在那儿的 remote）

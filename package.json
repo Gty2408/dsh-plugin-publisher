@@ -1,8 +1,8 @@
 {
   "name": "dsh-plugin-publisher",
   "displayName": "DSH Plugin Publisher",
-  "description": "Publish a DSH plugin to GitHub as a tool the agent calls, so another machine can install it with dsh plugin add github:<owner>/<repo>. Validates the manifest, initialises the repository, creates the GitHub repo, uploads the tree, and sets the dsh-plugin topic.",
-  "version": "2.0.0",
+  "description": "Publish a DSH plugin to GitHub as a tool the agent calls, and develop one repository from several machines. Validates the manifest, creates the repository, uploads the tree, sets the dsh-plugin topic, and gives each machine its own branch so work can be joined, synced and merged.",
+  "version": "2.1.0",
   "license": "MIT",
   "type": "module",
   "main": "lib/index.js",

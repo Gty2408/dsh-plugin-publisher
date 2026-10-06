@@ -1,7 +1,8 @@
-# Register the plugin publisher. It adds a loopback-only route set on the Host
-# (validate a plugin directory, publish it to GitHub, submit it to the
-# marketplace) and one settings page in the Web client. It changes no shipped
-# entry and no model default.
+# Register the plugin publisher. It adds seven agent tools: two for publishing a
+# plugin to GitHub (check_plugin, publish_plugin) and five for developing one
+# repository from several machines (join_project, share_project, sync_project,
+# merge_project, project_status). It registers no browser code and changes no
+# shipped entry and no model default.
 - insert:
     - id: dsh-plugin-publisher
       name: dsh-plugin-publisher
